@@ -1,0 +1,173 @@
+<!doctype html>
+
+<html lang="en">
+
+<head>
+    <meta charset="utf-8">
+    <script src="https://cdn.jsdelivr.net/npm/vega@5.28.0/build/vega.min.js"></script>
+    <script type="text/javascript" id="worker_script">
+        // The web worker code
+        self.onmessage = async function timeworker(event) {
+            const eventArray = event.data;
+            if (Array.isArray(eventArray)) {
+                for (const element of eventArray) {
+                    await doEvent(element);
+                };
+            };
+        };
+
+        function doEvent(element) {
+            return new Promise(resolve => {
+                if (element.type == 'interval') {
+
+                    index = element.start;
+                    let myInterval = setInterval(() => {
+                        postMessage({ dataindex: index });
+                        index += 1;
+                        if (index > element.end) {
+                            clearInterval(myInterval);
+                            console.log("interval resolved");
+                            resolve();
+                        }
+                    }, element.period);
+                } else if (element.type == 'delay') {
+
+                    setTimeout(() => {
+                        postMessage({ event: element.event });
+                        resolve();
+                        console.log("delay resolved");
+                    }, element.duration);
+                }
+            });
+        };
+
+    </script>
+    <script type="text/javascript">
+        // Wait until the DOM is loaded before trying to attach the vega spec to an element
+        window.addEventListener("load", () => {
+            const theview = new vega.View(vega.parse(vegaspec), {
+                renderer: 'canvas',
+                container: '#vegaElement',
+                hover: true
+            }).run();
+
+            // Create the web worker from a Blob formed from the worker_script element
+            // The web worker would normally be loaded from a regular URL
+            const myWorker = new Worker(
+                URL.createObjectURL(
+                    new Blob([worker_script.textContent])
+                )
+            );
+
+            // Send our array of events to the web worker
+            myWorker.postMessage(events);
+
+            // Process the responses, updating both the HTML element and sending an update to the vega signal
+            myWorker.onmessage = (e) => {
+                for (const keys in e.data) {
+                    switch (keys) {
+                        case 'dataindex':
+                            const dataindex = e.data.dataindex;
+                            document.getElementById('dataindex').innerText = dataindex;
+                            const indexevent = new CustomEvent("updateIndex", { detail: dataindex });
+                            window.dispatchEvent(indexevent);
+                            break;
+                        case 'event':
+                            const status = e.data.event;
+                            document.getElementById('status').innerText = status;
+                            const statusevent = new CustomEvent("updateStatus", { detail: status });
+                            window.dispatchEvent(statusevent);
+                    }
+                }
+            }
+        });
+
+        const events = [
+            {
+                "type": "interval",
+                "period": 10,
+                "start": 0,
+                "end": 316
+            },
+            {
+                "type": "delay",
+                "duration": 1000,
+                "event": "Target achieved"
+            }
+        ];
+
+        const vegaspec = {
+            "$schema": "https://vega.github.io/schema/vega/v3.0.json",
+            "description": "Web worker test",
+            "autosize": "pad",
+            "padding": 5,
+            "background": "#cec",
+            "signals": [
+                {
+                    "name": "width",
+                    "update": "300"
+                },
+                {
+                    "name": "height",
+                    "update": "200"
+                },
+                {
+                    "name": "dataindex",
+                    "value": "",
+                    "on": [
+                        {
+                            "events": "window:updateIndex",
+                            "update": "event.detail"
+                        }
+                    ]
+                },
+                {
+                    "name": "status",
+                    "value": "",
+                    "on": [
+                        {
+                            "events": "window:updateStatus",
+                            "update": "event.detail"
+                        }
+                    ]
+                }
+            ],
+            "marks": [
+                {
+                    "type": "text",
+                    "encode": {
+                        "enter": {
+                            "x": { "value": 0 },
+                            "y": { "value": 40 }
+                        },
+                        "update": {
+                            "text": { "signal": "dataindex" }
+                        }
+                    }
+                },
+                {
+                    "type": "text",
+                    "encode": {
+                        "enter": {
+                            "x": { "value": 0 },
+                            "y": { "value": 80 }
+                        },
+                        "update": {
+                            "text": { "signal": "status" }
+                        }
+                    }                    
+                }
+            ]
+        };
+
+
+    </script>
+</head>
+
+<body>
+    <div id="vegaElement"></div>
+    <p id="status"></p>
+    <p id="dataindex"></p>
+</body>
+
+</html>
